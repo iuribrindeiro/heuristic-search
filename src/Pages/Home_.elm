@@ -1,13 +1,20 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
-import Html exposing (button, div, text)
-import Html.Attributes exposing (disabled, style)
-import Html.Events exposing (onClick)
-import Page exposing (Page)
+import Css
+import Css.Global
+import Html.Attributes exposing (style)
+import Html.Events
+import Html.Styled as Html
+import Html.Styled.Attributes as Attr
+import Page
 import Process
 import Request exposing (Request)
+import Shared
+import Tailwind.Breakpoints as Breakpoints
+import Tailwind.Theme as Tw
+import Tailwind.Utilities as Tw
 import Task
-import Utils exposing (GenerateChildrenFailures, Grid, fromList, generateChildrenOf, notIn, toString)
+import Utils exposing (GenerateChildrenFailures, Grid, NestedGrid(..), generateChildrenOf, notIn, toGrid, toString)
 import View exposing (View)
 
 
@@ -17,50 +24,55 @@ goal =
     , [ 4, 5, 6 ]
     , [ 7, 8, 0 ]
     ]
-        |> fromList
+        |> toGrid
 
 
 start : Grid
 start =
     [ [ 1, 2, 3 ]
-    , [ 4, 5, 0 ]
-    , [ 7, 8, 6 ]
+    , [ 4, 8, 5 ]
+    , [ 6, 7, 0 ]
     ]
-        |> fromList
+        |> toGrid
 
 
-type Grids
-    = Grids { children : List Grids, parent : Maybe Grids, current : Grid }
+type GridState
+    = GridGoalFound
+    | SearchingGoal
+    | Closed
+    | Start
 
 
 type alias SearchingModel =
-    { x : Grid, open : List Grid, closed : List Grid }
+    { root : NestedGrid, x : Grid, open : List Grid, closed : List Grid }
 
 
-type Failure
+type FailureMsgType
     = NoMoreElementsInList
     | FailureGeneratingChildren GenerateChildrenFailures
 
 
-type alias GoalFoundModel =
-    { goalFound : Grid, closed : List Grid }
+type alias FailureModel =
+    { failure : FailureMsgType, current : SearchingModel }
 
 
 type Model
-    = Idle { open : List Grid, closed : List Grid }
-    | Seaching SearchingModel
-    | GoalFound GoalFoundModel
-    | Failure Failure
+    = Idle
+    | Searching SearchingModel
+    | GoalFound SearchingModel
+    | Failure FailureModel
 
 
 type Msg
-    = GoalFoundMsg GoalFoundModel
-    | FailureMsg Failure
-    | SearchingMsg SearchingModel
-    | StartSearchingMsg
+    = StartSearchingMsg
+    | XFoundMsg { x : Grid, open : List Grid }
+    | KeepSearchingMsg { children : List Grid, open : List Grid, closed : List Grid }
+    | GoalFoundMsg { goalValue : Grid, closed : List Grid }
+    | FailureMsg FailureMsgType
 
 
-page shared req =
+page : Shared.Model -> Request -> Page.With Model Msg
+page _ _ =
     Page.element { init = init, update = update, view = view, subscriptions = subscriptions }
 
 
@@ -71,171 +83,171 @@ subscriptions =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Idle { open = [ start ], closed = [] }, Cmd.none )
+    ( Idle, Cmd.none )
+
+
+firstNestedGrid : NestedGrid
+firstNestedGrid =
+    NestedGridModel { current = start, parent = Nothing, children = [] }
+
+
+getCurrentSearchingModel : Model -> SearchingModel
+getCurrentSearchingModel model =
+    case model of
+        Idle ->
+            { x = start, root = firstNestedGrid, open = [ start ], closed = [] }
+
+        Searching searchingMmodel ->
+            searchingMmodel
+
+        GoalFound searchingMmodel ->
+            searchingMmodel
+
+        Failure { current } ->
+            current
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        currentSearchingModel =
+            getCurrentSearchingModel model
+
+        root =
+            currentSearchingModel.root
+    in
     case msg of
-        GoalFoundMsg x ->
-            ( GoalFound x, Cmd.none )
+        StartSearchingMsg ->
+            ( currentSearchingModel |> Searching, findX currentSearchingModel.open )
+
+        XFoundMsg { x, open } ->
+            ( { currentSearchingModel | x = x } |> Searching
+            , findGoal x open currentSearchingModel.closed
+            )
+
+        KeepSearchingMsg { children, open, closed } ->
+            ( { currentSearchingModel
+                | x = currentSearchingModel.x
+                , open = open
+                , closed = closed
+                , root = addChildrenToTarget currentSearchingModel.x children root
+              }
+                |> Searching
+            , findX open
+            )
+
+        GoalFoundMsg { goalValue, closed } ->
+            ( { currentSearchingModel | x = goalValue, closed = closed } |> GoalFound, Cmd.none )
 
         FailureMsg failure ->
-            ( Failure failure, Cmd.none )
-
-        SearchingMsg { x, open, closed } ->
-            ( Seaching { x = x, open = open, closed = closed }, findGoal open closed )
-
-        StartSearchingMsg ->
-            ( Seaching { x = start, open = [], closed = [] }, findGoal [ start ] [] )
+            ( { failure = failure, current = currentSearchingModel } |> Failure, Cmd.none )
 
 
-view : Model -> View Msg
-view model =
+addChildrenToTarget : Grid -> List Grid -> NestedGrid -> NestedGrid
+addChildrenToTarget x children (NestedGridModel root) =
+    if x == root.current then
+        NestedGridModel root |> addChildren children
+
+    else if root.children == [] then
+        NestedGridModel root
+
+    else
+        NestedGridModel { root | children = root.children |> List.map (addChildrenToTarget x children) }
+
+
+addChildren : List Grid -> NestedGrid -> NestedGrid
+addChildren children (NestedGridModel current) =
+    NestedGridModel
+        { current
+            | children =
+                children
+                    |> List.map
+                        (\x ->
+                            NestedGridModel
+                                { current = x
+                                , children = []
+                                , parent = Just (NestedGridModel current)
+                                }
+                        )
+        }
+
+
+bla : List (Html.Html msg)
+bla =
+    [ Html.div [] [ Html.text "bla" ]
+    ]
+
+
+view : Model -> View msg
+view _ =
     { title = "Homepage"
     , body =
-        [ div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "margin" "auto"
-            , style "margin-top" "20vh"
-            ]
-            [ div
-                [ style "display" "flex"
-                , style "flex-direction" "column"
-                , style "align-items" "center"
-                ]
-                [ findGoalButton model
-                , case model of
-                    Idle e ->
-                        renderGrid start e.open e.closed
-
-                    Seaching { x, open, closed } ->
-                        div
-                            [ style "display" "flex", style "flex-direction" "column" ]
-                            (List.append
-                                [ renderGrid x open closed
-                                ]
-                                [ div
-                                    [ style "display" "flex"
-                                    , style "flex-direction" "row"
-                                    , style "justify-content" "center"
-                                    ]
-                                    (List.map
-                                        (\g -> div [ style "margin" "5px" ] [ renderGrid g open closed ])
-                                        open
-                                    )
-                                ]
-                            )
-
-                    GoalFound x ->
-                        renderGrid x.goalFound [] x.closed
-
-                    Failure _ ->
-                        text "Failure"
-                ]
-            ]
+        [ Html.div [] [ Html.text "bla" ]
         ]
+
+    -- Html.toUnstyled <|
+    --     [ Html.div [ Attr.css [ Tw.bg_color Tw.gray_50 ] ]
+    --         [ -- This will give us the standard tailwind style-reset as well as the fonts
+    --           Css.Global.global Tw.globalStyles
+    --         , Html.div
+    --             [ Attr.css
+    --                 [ Tw.mt_8
+    --                 , Tw.flex
+    --                 -- We use breakpoints like this
+    --                 -- However, you need to order your breakpoints from high to low :/
+    --                 , Breakpoints.lg [ Tw.mt_0, Tw.flex_shrink_0 ]
+    --                 ]
+    --             ]
+    --             [ Html.div [ Attr.css [ Tw.inline_flex, Tw.rounded_md, Tw.shadow ] ]
+    --                 [ Html.a
+    --                     [ Attr.css
+    --                         [ Tw.inline_flex
+    --                         , Tw.items_center
+    --                         , Tw.justify_center
+    --                         , Tw.px_5
+    --                         , Tw.py_3
+    --                         , Tw.border
+    --                         , Tw.border_color Tw.transparent
+    --                         , Tw.text_base
+    --                         , Tw.font_medium
+    --                         , Tw.rounded_md
+    --                         , Tw.text_color Tw.white
+    --                         , Tw.bg_color Tw.indigo_600
+    --                         -- We can use hover styles via elm-css :)
+    --                         , Css.hover [ Tw.bg_color Tw.indigo_700 ]
+    --                         ]
+    --                     , Attr.href "#"
+    --                     ]
+    --                     [ Html.text "Get started" ]
+    --                 ]
+    --             ]
+    --         ]
+    --     ]
     }
 
 
-findGoalButton : Model -> Html.Html Msg
-findGoalButton model =
-    let
-        disab =
-            case model of
-                Idle _ ->
-                    False
+getGridState : List Grid -> List Grid -> Bool -> Grid -> GridState
+getGridState open closed goalFound x =
+    if x == goal && goalFound then
+        GridGoalFound
 
-                Seaching _ ->
-                    True
+    else if (x |> List.member) <| open then
+        SearchingGoal
 
-                GoalFound _ ->
-                    False
+    else if (x |> List.member) <| closed then
+        Closed
 
-                Failure _ ->
-                    False
-
-        txtOnModel =
-            case model of
-                Idle _ ->
-                    "Click here to find the goal!"
-
-                Seaching _ ->
-                    "Searching..."
-
-                GoalFound _ ->
-                    "Goal found! Try again :)"
-
-                Failure _ ->
-                    ":( Click here to try again"
-    in
-    button
-        [ onClick StartSearchingMsg
-        , disabled disab
-        , style "margin-bottom" "20px"
-        ]
-        [ text txtOnModel
-        ]
+    else
+        Start
 
 
-renderGrid : Grid -> List Grid -> List Grid -> Html.Html msg
-renderGrid grid open closed =
-    let
-        color =
-            if List.member grid closed then
-                "gray"
+findGoal : Grid -> List Grid -> List Grid -> Cmd Msg
+findGoal x open closed =
+    if x == goal then
+        GoalFoundMsg { goalValue = x, closed = open ++ closed } |> delayMessage
 
-            else if List.member grid open then
-                "blue"
-
-            else if grid == start then
-                "blue"
-
-            else
-                "green"
-    in
-    div
-        []
-        (List.map
-            (\row ->
-                div
-                    [ style "display" "flex"
-                    , style "justify-content" "center"
-                    , style "color" color
-                    ]
-                    (List.map
-                        (\slot ->
-                            div
-                                [ style "width" "50px"
-                                , style "height" "50px"
-                                , style "border" ("1px solid " ++ color)
-                                , style "justify-content" "center"
-                                , style "align-items" "center"
-                                , style "display" "flex"
-                                ]
-                                [ text (toString slot) ]
-                        )
-                        row
-                    )
-            )
-            grid
-        )
-
-
-findGoal : List Grid -> List Grid -> Cmd Msg
-findGoal open closed =
-    case findX open of
-        Just ( x, openWithoutX ) ->
-            if x == goal then
-                GoalFoundMsg { goalFound = x, closed = open ++ closed } |> delayMessage
-
-            else
-                x |> generateChildrenAndSearch closed openWithoutX
-
-        Nothing ->
-            FailureMsg NoMoreElementsInList
-                |> delayMessage
+    else
+        x |> generateChildrenAndSearch closed open
 
 
 generateChildrenAndSearch : List Grid -> List Grid -> Grid -> Cmd Msg
@@ -251,7 +263,7 @@ generateChildrenAndSearch closed open x =
                 newClosed =
                     x :: closed
             in
-            SearchingMsg { x = x, open = newOpen, closed = newClosed }
+            KeepSearchingMsg { children = childrenOfX, open = newOpen, closed = newClosed }
                 |> delayMessage
 
         Err failures ->
@@ -260,17 +272,17 @@ generateChildrenAndSearch closed open x =
                 |> delayMessage
 
 
-findX : List Grid -> Maybe ( Grid, List Grid )
-findX list =
-    case list of
+findX : List Grid -> Cmd Msg
+findX open =
+    case open of
         [] ->
-            Nothing
+            FailureMsg NoMoreElementsInList |> delayMessage
 
         x :: xs ->
-            ( x, xs ) |> Just
+            { x = x, open = xs } |> XFoundMsg |> delayMessage
 
 
 delayMessage : Msg -> Cmd Msg
 delayMessage msg =
-    Process.sleep 1000
+    Process.sleep 200
         |> Task.perform (\_ -> msg)

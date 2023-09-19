@@ -1,5 +1,8 @@
 module Utils exposing (..)
 
+import Html exposing (b)
+import List exposing (singleton)
+
 
 type alias Slot =
     { lineIndex : Int, colIndex : Int, value : Maybe Int }
@@ -25,8 +28,67 @@ type GenerateChildrenFailures
     | NoSlotOverRightEmptySlot EmptySlot
 
 
+type NestedGrid
+    = NestedGridModel { children : List NestedGrid, parent : Maybe NestedGrid, current : Grid }
+
+
 
 -- UTIL FUNC
+
+
+getCurrent : NestedGrid -> Grid
+getCurrent (NestedGridModel nested) =
+    nested.current
+
+
+apply : a -> a -> (a -> b) -> ( b, b )
+apply a1 a2 f =
+    ( f a1, f a2 )
+
+
+toArgs : (a -> a -> b) -> ( a, a ) -> b
+toArgs f ( a, a1 ) =
+    f a a1
+
+
+findRoot : NestedGrid -> NestedGrid
+findRoot (NestedGridModel nested) =
+    case nested.parent of
+        Just parent ->
+            findRoot parent
+
+        Nothing ->
+            NestedGridModel nested
+
+
+findNested : Grid -> NestedGrid -> NestedGrid
+findNested target (NestedGridModel root) =
+    if target == root.current then
+        NestedGridModel root
+
+    else if root.children == [] then
+        NestedGridModel root
+
+    else
+        root.children
+            |> List.map (findNested target)
+            |> List.filter (\(NestedGridModel x) -> x.current == target)
+            |> List.head
+            |> Maybe.withDefault (NestedGridModel root)
+
+
+nestedToGrid : NestedGrid -> List Grid
+nestedToGrid (NestedGridModel nested) =
+    [ [ nested.current ]
+    , maybeNestedToLstGrid nested.parent
+    ]
+        |> List.concat
+
+
+maybeNestedToLstGrid : Maybe NestedGrid -> List Grid
+maybeNestedToLstGrid nested =
+    Maybe.map nestedToGrid nested
+        |> Maybe.withDefault []
 
 
 toString : Slot -> String
@@ -47,8 +109,8 @@ notIn grid2 grid1 =
     List.filter (\child -> List.member child grid2 |> not) grid1
 
 
-fromList : List (List Int) -> Grid
-fromList =
+toGrid : List (List Int) -> Grid
+toGrid =
     List.indexedMap
         (\lineIndex line ->
             line
