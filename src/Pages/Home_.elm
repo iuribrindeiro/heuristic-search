@@ -195,18 +195,48 @@ view model =
                     |> renderStyledGrid Tw.green_400
                 ]
              ]
-                |> List.append [ startButtom ]
+                |> List.append [ startButtom model ]
             )
         ]
     }
 
 
-startButtom : Html.Html Msg
-startButtom =
+startButtom : Model -> Html.Html Msg
+startButtom model =
+    let
+        disabled =
+            case model of
+                Idle ->
+                    False
+
+                Failure _ ->
+                    False
+
+                _ ->
+                    True
+
+        hoverStyles =
+            if not disabled then
+                [ Tw.scale_110
+                , Tw.duration_300
+                , Tw.neg_translate_y_1
+                , Tw.bg_color Tw.indigo_400
+                ]
+
+            else
+                []
+
+        color =
+            if disabled then
+                Tw.gray_400
+
+            else
+                Tw.sky_400
+    in
     Html.button
         [ Attr.css
-            [ Tw.rounded_lg
-            , Tw.bg_color Tw.sky_400
+            [ Tw.rounded_xl
+            , Tw.bg_color color
             , Tw.px_8
             , Tw.py_2
             , Tw.border_none
@@ -218,14 +248,10 @@ startButtom =
             , Tw.transform
             , Tw.mb_5
             , Tw.text_sm
-            , Css.hover
-                [ Tw.scale_110
-                , Tw.duration_300
-                , Tw.neg_translate_y_1
-                , Tw.bg_color Tw.indigo_400
-                ]
+            , Css.hover hoverStyles
             ]
         , Html.Styled.Events.onClick StartSearchingMsg
+        , Attr.disabled disabled
         ]
         [ Html.text "Start" ]
 
