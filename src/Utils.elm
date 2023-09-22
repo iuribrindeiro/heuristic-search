@@ -91,19 +91,6 @@ maybeNestedToLstGrid nested =
         |> Maybe.withDefault []
 
 
-toString : Slot -> String
-toString slot =
-    slot.value
-        |> Maybe.withDefault 0
-        |> (\x ->
-                if x == 0 then
-                    ""
-
-                else
-                    String.fromInt x
-           )
-
-
 notIn : List Grid -> List Grid -> List Grid
 notIn grid2 grid1 =
     List.filter (\child -> List.member child grid2 |> not) grid1
