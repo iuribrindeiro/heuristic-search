@@ -37,17 +37,10 @@ toBrowserDocument : View msg -> Browser.Document msg
 toBrowserDocument view =
     { title = view.title
     , body =
-        [ Css.Global.global [ Css.Global.selector "body" [ Tw.bg_color Tw.neutral_800 ] ]
-        , Html.div
-            [ Attr.css
-                [ Tw.flex
-                , Tw.items_start
-                ]
-            ]
-            [ Html.div
-                [ Attr.css [ Tw.mx_auto, Tw.mt_40 ] ]
-                view.body
-            ]
+        [ Css.Global.global <|
+            Css.Global.selector "body" [ Tw.bg_color Tw.neutral_800 ]
+                :: Tw.globalStyles
+        , Html.div [ Attr.css [ Tw.mx_5, Tw.mt_10 ] ] view.body
         ]
             |> List.map toUnstyled
     }

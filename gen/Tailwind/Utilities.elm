@@ -334,6 +334,54 @@ animate_bounce =
         ]
 
 
+animate_finiteSmPing : Css.Style
+animate_finiteSmPing =
+    Css.batch
+        [ Css.property "animation" "1s cubic-bezier(0,0,.2,1) 2"
+        , Css.animationName
+            (Css.Animations.keyframes
+                [ ( 75
+                  , [ Css.Animations.property "transform" "scale(1.1)"
+                    , Css.Animations.property "opacity" "0"
+                    ]
+                  )
+                ]
+            )
+        ]
+
+
+animate_infiniteSmPing : Css.Style
+animate_infiniteSmPing =
+    Css.batch
+        [ Css.property "animation" "1s cubic-bezier(0,0,.2,1) infinite"
+        , Css.animationName
+            (Css.Animations.keyframes
+                [ ( 75
+                  , [ Css.Animations.property "transform" "scale(1.1)"
+                    , Css.Animations.property "opacity" "0"
+                    ]
+                  )
+                ]
+            )
+        ]
+
+
+animate_longCountSmPing : Css.Style
+animate_longCountSmPing =
+    Css.batch
+        [ Css.property "animation" "1s cubic-bezier(0,0,.2,1) 2"
+        , Css.animationName
+            (Css.Animations.keyframes
+                [ ( 75
+                  , [ Css.Animations.property "transform" "scale(1.1)"
+                    , Css.Animations.property "opacity" "0"
+                    ]
+                  )
+                ]
+            )
+        ]
+
+
 animate_none : Css.Style
 animate_none =
     Css.property "animation" "none"
@@ -14092,6 +14140,15 @@ neg_scale_150 =
         ]
 
 
+neg_scale_30 : Css.Style
+neg_scale_30 =
+    Css.batch
+        [ Css.property "--tw-scale-x" "-0.3"
+        , Css.property "--tw-scale-y" "-0.3"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
 neg_scale_50 : Css.Style
 neg_scale_50 =
     Css.batch
@@ -14176,6 +14233,14 @@ neg_scale_x_150 =
         ]
 
 
+neg_scale_x_30 : Css.Style
+neg_scale_x_30 =
+    Css.batch
+        [ Css.property "--tw-scale-x" "-0.3"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
 neg_scale_x_50 : Css.Style
 neg_scale_x_50 =
     Css.batch
@@ -14252,6 +14317,14 @@ neg_scale_y_150 : Css.Style
 neg_scale_y_150 =
     Css.batch
         [ Css.property "--tw-scale-y" "-1.5"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
+neg_scale_y_30 : Css.Style
+neg_scale_y_30 =
+    Css.batch
+        [ Css.property "--tw-scale-y" "-0.3"
         , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
         ]
 
@@ -22134,6 +22207,15 @@ scale_150 =
         ]
 
 
+scale_30 : Css.Style
+scale_30 =
+    Css.batch
+        [ Css.property "--tw-scale-x" "0.3"
+        , Css.property "--tw-scale-y" "0.3"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
 scale_50 : Css.Style
 scale_50 =
     Css.batch
@@ -22218,6 +22300,14 @@ scale_x_150 =
         ]
 
 
+scale_x_30 : Css.Style
+scale_x_30 =
+    Css.batch
+        [ Css.property "--tw-scale-x" "0.3"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
 scale_x_50 : Css.Style
 scale_x_50 =
     Css.batch
@@ -22294,6 +22384,14 @@ scale_y_150 : Css.Style
 scale_y_150 =
     Css.batch
         [ Css.property "--tw-scale-y" "1.5"
+        , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
+        ]
+
+
+scale_y_30 : Css.Style
+scale_y_30 =
+    Css.batch
+        [ Css.property "--tw-scale-y" "0.3"
         , Css.property "transform" "translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))"
         ]
 

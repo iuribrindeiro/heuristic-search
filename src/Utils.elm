@@ -1,7 +1,6 @@
 module Utils exposing (..)
 
-import Html exposing (b)
-import List exposing (singleton)
+import List exposing (isEmpty)
 
 
 type alias Slot =
@@ -13,7 +12,7 @@ type alias Line =
 
 
 type alias Grid =
-    List Line
+    { lines : List Line, heuristic : Maybe Int }
 
 
 type alias EmptySlot =
@@ -28,8 +27,13 @@ type GenerateChildrenFailures
     | NoSlotOverRightEmptySlot EmptySlot
 
 
+type FindNestedFailure
+    = NoMoreChildren
+    | NoNestedGridFound
+
+
 type NestedGrid
-    = NestedGridModel { children : List NestedGrid, parent : Maybe NestedGrid, current : Grid }
+    = NestedGridModel { children : List NestedGrid, parent : Maybe NestedGrid, current : Grid, level : Int }
 
 
 
@@ -63,7 +67,7 @@ findRoot (NestedGridModel nested) =
 
 findNested : Grid -> NestedGrid -> NestedGrid
 findNested target (NestedGridModel root) =
-    if target == root.current then
+    if target.lines == root.current.lines then
         NestedGridModel root
 
     else if root.children == [] then
@@ -72,7 +76,7 @@ findNested target (NestedGridModel root) =
     else
         root.children
             |> List.map (findNested target)
-            |> List.filter (\(NestedGridModel x) -> x.current == target)
+            |> List.filter (\(NestedGridModel x) -> x.current.lines == target.lines)
             |> List.head
             |> Maybe.withDefault (NestedGridModel root)
 
@@ -92,28 +96,40 @@ maybeNestedToLstGrid nested =
 
 
 notIn : List Grid -> List Grid -> List Grid
-notIn grid2 grid1 =
-    List.filter (\child -> List.member child grid2 |> not) grid1
+notIn grids2 grids1 =
+    grids1
+        |> List.filter (notMember grids2)
+
+
+notMember : List Grid -> Grid -> Bool
+notMember grids2 child =
+    not <|
+        List.any (\z -> z.lines == child.lines) grids2
 
 
 toGrid : List (List Int) -> Grid
-toGrid =
-    List.indexedMap
-        (\lineIndex line ->
-            line
-                |> List.indexedMap
-                    (\colIndex value ->
-                        { lineIndex = lineIndex
-                        , colIndex = colIndex
-                        , value =
-                            if value == 0 then
-                                Nothing
+toGrid lstOfLineValues =
+    let
+        lines =
+            List.indexedMap
+                (\lineIndex line ->
+                    line
+                        |> List.indexedMap
+                            (\colIndex value ->
+                                { lineIndex = lineIndex
+                                , colIndex = colIndex
+                                , value =
+                                    if value == 0 then
+                                        Nothing
 
-                            else
-                                Just value
-                        }
-                    )
-        )
+                                    else
+                                        Just value
+                                }
+                            )
+                )
+                lstOfLineValues
+    in
+    { lines = lines, heuristic = Nothing }
 
 
 
@@ -129,7 +145,7 @@ generateChildrenOf grid =
 
 allNonEmptyLists : List Grid -> List Grid
 allNonEmptyLists =
-    List.isEmpty >> not |> List.filter
+    List.filter (\z -> z.lines |> not << isEmpty)
 
 
 tryMoveToEveryDirection : Grid -> EmptySlot -> Result GenerateChildrenFailures (List Grid)
@@ -154,10 +170,10 @@ combineMovementResults r1 r2 r3 r4 =
 tryMoveLeft : EmptySlot -> Grid -> Result GenerateChildrenFailures Grid
 tryMoveLeft emptySlot grid =
     if emptySlot |> isInLastCol grid then
-        Ok []
+        Ok { lines = [], heuristic = Nothing }
 
     else
-        grid
+        grid.lines
             |> List.concat
             |> findSlotOnRightSideEmptySlot emptySlot
             |> rearangeGrid emptySlot grid
@@ -166,10 +182,10 @@ tryMoveLeft emptySlot grid =
 tryMoveRight : EmptySlot -> Grid -> Result GenerateChildrenFailures Grid
 tryMoveRight emptySlot grid =
     if emptySlot |> isInFirstCol then
-        Ok []
+        Ok { lines = [], heuristic = Nothing }
 
     else
-        grid
+        grid.lines
             |> List.concat
             |> findSlotOnLeftSideEmptySlot emptySlot
             |> rearangeGrid emptySlot grid
@@ -178,10 +194,10 @@ tryMoveRight emptySlot grid =
 tryMoveUp : EmptySlot -> Grid -> Result GenerateChildrenFailures Grid
 tryMoveUp emptySlot grid =
     if emptySlot |> isInLastLine grid then
-        Ok []
+        Ok { lines = [], heuristic = Nothing }
 
     else
-        grid
+        grid.lines
             |> List.concat
             |> findSlotUnderEmptySlot emptySlot
             |> rearangeGrid emptySlot grid
@@ -190,10 +206,10 @@ tryMoveUp emptySlot grid =
 tryMoveDown : EmptySlot -> Grid -> Result GenerateChildrenFailures Grid
 tryMoveDown emptySlot grid =
     if emptySlot |> isInFirstLine then
-        Ok []
+        Ok { lines = [], heuristic = Nothing }
 
     else
-        grid
+        grid.lines
             |> List.concat
             |> findSlotAboveEmptySlot emptySlot
             |> rearangeGrid emptySlot grid
@@ -206,12 +222,12 @@ isInFirstLine emptySlot =
 
 isInLastLine : Grid -> EmptySlot -> Bool
 isInLastLine grid emptySlot =
-    emptySlot.lineIndex == (List.length grid - 1)
+    emptySlot.lineIndex == (List.length grid.lines - 1)
 
 
 isInLastCol : Grid -> EmptySlot -> Bool
 isInLastCol grid emptySlot =
-    emptySlot.colIndex == (List.length grid - 1)
+    emptySlot.colIndex == (List.length grid.lines - 1)
 
 
 isInFirstCol : EmptySlot -> Bool
@@ -227,7 +243,7 @@ rearangeGrid emptySlot grid =
 
 replaceSlotsInGrid : Grid -> ( Slot, Slot ) -> Grid
 replaceSlotsInGrid grid slots =
-    grid
+    grid.lines
         |> List.map
             (List.map
                 (\slot ->
@@ -241,6 +257,7 @@ replaceSlotsInGrid grid slots =
                         slot
                 )
             )
+        |> (\z -> { lines = z, heuristic = Nothing })
 
 
 sameSlotIndex : Slot -> Slot -> Bool
@@ -325,7 +342,7 @@ byLineIndex ind =
 
 findEmptySlot : Grid -> Result GenerateChildrenFailures EmptySlot
 findEmptySlot grid =
-    grid
+    grid.lines
         |> List.concat
         |> List.filter isNone
         |> List.head

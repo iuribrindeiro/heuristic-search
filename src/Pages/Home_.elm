@@ -1,30 +1,30 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
+import Components.Grid exposing (GridState(..), renderMdGrid, renderSmallGrid, singleItemStyledNodeWrapper, styledLstOfChildren, styledNode)
+import Components.Labels exposing (labels)
+import Components.PrimaryButton exposing (primaryButton)
+import Components.Radio exposing (radioInput)
+import Core exposing (FindGoalResult(..), FindXResult(..), SearchMode(..), findGoal, findX)
 import Css
-import Css.Global
-import Dict
-import Html.Attributes exposing (style)
 import Html.Styled as Html
 import Html.Styled.Attributes as Attr
-import Html.Styled.Events
-import List exposing (singleton)
+import List
 import Page
 import Process
 import Request exposing (Request)
 import Shared
-import Tailwind.Breakpoints as Breakpoints
 import Tailwind.Theme as Tw
 import Tailwind.Utilities as Tw
 import Task
-import Utils exposing (GenerateChildrenFailures, Grid, Line, NestedGrid(..), Slot, generateChildrenOf, notIn, toGrid)
+import Utils exposing (GenerateChildrenFailures, Grid, NestedGrid(..), toGrid)
 import View exposing (View)
 
 
 goal : Grid
 goal =
     [ [ 1, 2, 3 ]
-    , [ 4, 5, 6 ]
-    , [ 7, 8, 0 ]
+    , [ 5, 8, 6 ]
+    , [ 4, 7, 0 ]
     ]
         |> toGrid
 
@@ -33,17 +33,9 @@ start : Grid
 start =
     [ [ 1, 2, 3 ]
     , [ 4, 5, 6 ]
-    , [ 7, 0, 8 ]
+    , [ 0, 8, 7 ]
     ]
         |> toGrid
-
-
-type GridState
-    = Success
-    | Loading
-    | LoadingX
-    | Disabled
-    | Start
 
 
 type alias SearchingModel =
@@ -56,10 +48,17 @@ type FailureMsgType
 
 
 type alias FailureModel =
-    { failure : FailureMsgType, searchModel : SearchingModel }
+    { failure : FailureMsgType, searchingModel : SearchingModel }
 
 
-type Model
+type alias Model =
+    { searchMode : SearchMode
+    , selectedGrid : Maybe Grid
+    , state : State
+    }
+
+
+type State
     = Idle
     | Searching SearchingModel
     | GoalFound SearchingModel
@@ -70,8 +69,11 @@ type Msg
     = StartSearchingMsg
     | XFoundMsg { x : Grid, open : List Grid }
     | KeepSearchingMsg { children : List Grid, open : List Grid, closed : List Grid }
-    | GoalFoundMsg { goalValue : Grid, closed : List Grid }
+    | GoalFoundMsg
     | FailureMsg FailureMsgType
+    | UpdateSearchMode SearchMode
+    | SelectGrid Grid
+    | DeselectGrid
 
 
 page : Shared.Model -> Request -> Page.With Model Msg
@@ -86,28 +88,57 @@ subscriptions =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Idle, Cmd.none )
+    ( { searchMode = BreadthFirst, selectedGrid = Nothing, state = Idle }, Cmd.none )
 
 
 firstNestedGrid : NestedGrid
 firstNestedGrid =
-    NestedGridModel { current = start, parent = Nothing, children = [] }
+    NestedGridModel { current = start, parent = Nothing, children = [], level = 0 }
 
 
 getCurrentSearchingModel : Model -> SearchingModel
 getCurrentSearchingModel model =
-    case model of
+    case model.state of
         Idle ->
             { x = start, root = firstNestedGrid, open = [ start ], closed = [] }
 
-        Searching searchingMmodel ->
-            searchingMmodel
+        Searching searchingModel ->
+            searchingModel
 
-        GoalFound searchingMmodel ->
-            searchingMmodel
+        GoalFound searchingModel ->
+            searchingModel
 
-        Failure { searchModel } ->
-            searchModel
+        Failure { searchingModel } ->
+            searchingModel
+
+
+findXWithMsg : List Grid -> Cmd Msg
+findXWithMsg open =
+    case findX open of
+        LstIsEmpty ->
+            FailureMsg NoMoreElementsInList
+                |> delayMessage200ms
+
+        XFound rs ->
+            XFoundMsg rs
+                |> delayMessage200ms
+
+
+findGoalWithMsg : Grid -> List Grid -> List Grid -> SearchMode -> NestedGrid -> Cmd Msg
+findGoalWithMsg x open closed searchMode root =
+    case findGoal x goal open closed searchMode root of
+        FailRs generatingChildFail ->
+            FailureGeneratingChildren generatingChildFail
+                |> FailureMsg
+                |> delayMessage200ms
+
+        GoalFoundRs ->
+            GoalFoundMsg
+                |> delayMessage200ms
+
+        KeepSearchingRs rs ->
+            KeepSearchingMsg rs
+                |> delayMessage2s
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -116,39 +147,78 @@ update msg model =
         currentSearchingModel =
             getCurrentSearchingModel model
 
-        root =
-            currentSearchingModel.root
+        handleStartSearchingMsg =
+            ( { model | state = Searching currentSearchingModel }, findXWithMsg currentSearchingModel.open )
+
+        handleUpdateSearchMsg newSearchMode =
+            ( { model | searchMode = newSearchMode, state = Idle }, Cmd.none )
+
+        handleSelectGrid grid =
+            ( { model | selectedGrid = Just grid }, Cmd.none )
+
+        handleDeselectGrid =
+            ( { model | selectedGrid = Nothing }, Cmd.none )
     in
-    case msg of
-        StartSearchingMsg ->
-            ( currentSearchingModel |> Searching, findX currentSearchingModel.open )
+    case model.state of
+        Idle ->
+            case msg of
+                StartSearchingMsg ->
+                    handleStartSearchingMsg
 
-        XFoundMsg { x, open } ->
-            ( { currentSearchingModel | x = x } |> Searching
-            , findGoal x open currentSearchingModel.closed
-            )
+                UpdateSearchMode searchMode ->
+                    handleUpdateSearchMsg searchMode
 
-        KeepSearchingMsg { children, open, closed } ->
-            ( { currentSearchingModel
-                | x = currentSearchingModel.x
-                , open = open
-                , closed = closed
-                , root = addChildrenToTarget currentSearchingModel.x children root
-              }
-                |> Searching
-            , findX open
-            )
+                SelectGrid grid ->
+                    handleSelectGrid grid
 
-        GoalFoundMsg { goalValue, closed } ->
-            ( { currentSearchingModel | x = goalValue, closed = closed } |> GoalFound, Cmd.none )
+                DeselectGrid ->
+                    handleDeselectGrid
 
-        FailureMsg failure ->
-            ( { failure = failure, searchModel = currentSearchingModel } |> Failure, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+
+        _ ->
+            case msg of
+                StartSearchingMsg ->
+                    handleStartSearchingMsg
+
+                XFoundMsg { x, open } ->
+                    ( { model | state = Searching { currentSearchingModel | x = x, open = open } }
+                    , findGoalWithMsg x open currentSearchingModel.closed model.searchMode currentSearchingModel.root
+                    )
+
+                KeepSearchingMsg { children, open, closed } ->
+                    ( { model
+                        | state =
+                            Searching
+                                { currentSearchingModel
+                                    | open = open
+                                    , closed = closed
+                                    , root = addChildrenToTarget currentSearchingModel.x children currentSearchingModel.root
+                                }
+                      }
+                    , findXWithMsg open
+                    )
+
+                GoalFoundMsg ->
+                    ( { model | state = GoalFound { currentSearchingModel | open = List.filter (\z -> z /= currentSearchingModel.x) currentSearchingModel.open } }, Cmd.none )
+
+                FailureMsg failure ->
+                    ( { model | state = Failure { failure = failure, searchingModel = currentSearchingModel } }, Cmd.none )
+
+                UpdateSearchMode newSearchMode ->
+                    handleUpdateSearchMsg newSearchMode
+
+                SelectGrid grid ->
+                    handleSelectGrid grid
+
+                DeselectGrid ->
+                    handleDeselectGrid
 
 
 addChildrenToTarget : Grid -> List Grid -> NestedGrid -> NestedGrid
 addChildrenToTarget x children (NestedGridModel root) =
-    if x == root.current then
+    if x.lines == root.current.lines then
         NestedGridModel root |> addChildren children
 
     else if root.children == [] then
@@ -170,42 +240,135 @@ addChildren children (NestedGridModel current) =
                                 { current = x
                                 , children = []
                                 , parent = Just (NestedGridModel current)
+                                , level = current.level + 1
                                 }
                         )
         }
 
 
+setHeuristic : Msg
+setHeuristic =
+    UpdateSearchMode Heuristic
+
+
+setDepthFirst : Msg
+setDepthFirst =
+    UpdateSearchMode DepthFirst
+
+
+setBreadthFirst : Msg
+setBreadthFirst =
+    UpdateSearchMode BreadthFirst
+
+
+isGridSelected : Model -> Grid -> Bool
+isGridSelected model grid =
+    Maybe.map (\z -> z.lines == grid.lines) model.selectedGrid
+        |> Maybe.withDefault False
+
+
 view : Model -> View Msg
 view model =
+    let
+        searchingModel =
+            getCurrentSearchingModel model
+    in
     { title = "Homepage"
     , body =
-        [ Css.Global.global Tw.globalStyles
-        , Html.div
+        [ Html.div
             [ Attr.css
                 [ Tw.flex
                 , Tw.flex_col
-                , Tw.items_center
-                , Tw.relative
+                , Tw.justify_between
+                , Css.height (Css.rem 70)
                 ]
             ]
-            ([ Html.div [ Attr.css [ Tw.flex, Tw.flex_row ] ]
-                [ renderNestedGrid model
-                , goal
-                    |> List.map (renderLine Tw.green_400)
-                    |> renderStyledGrid Tw.green_400
+            [ Html.div
+                [ Attr.css
+                    [ Tw.flex
+                    , Tw.flex_col
+                    , Tw.pl_2
+                    , Tw.pb_4
+                    ]
                 ]
-             ]
-                |> List.append [ startButtom model ]
-            )
+                [ model.searchMode
+                    == BreadthFirst
+                    |> radioInput "breadth-first" "searchType" "Breadth First" setBreadthFirst
+                , model.searchMode
+                    == DepthFirst
+                    |> radioInput "depth-first" "searchType" "Depth First" setDepthFirst
+                , model.searchMode
+                    == Heuristic
+                    |> radioInput "heuristic" "searchType" "Heuristic" setHeuristic
+                , labels
+                , startButton model
+                , renderGridRow <|
+                    List.map (renderSmallGrid Disabled False SelectGrid DeselectGrid) searchingModel.closed
+                , renderGridRow <|
+                    List.map (renderSmallGrid Loading False SelectGrid DeselectGrid) searchingModel.open
+                ]
+            , Html.div
+                [ Attr.css
+                    [ Tw.flex
+                    , Tw.flex_row
+                    , Tw.items_start
+                    , Tw.justify_center
+                    , Tw.relative
+                    , Tw.basis_full
+                    , Tw.overflow_auto
+                    , Tw.bg_scroll
+                    , Tw.py_4
+                    , Tw.h_full
+                    , Tw.border
+                    , Tw.border_color Tw.neutral_700
+                    , Tw.rounded_2xl
+                    , Tw.shadow_lg
+                    , Tw.shadow_color Tw.neutral_900
+                    ]
+                ]
+                [ Html.div
+                    [ Attr.css
+                        [ Tw.flex
+                        , Tw.flex_row
+                        , Tw.max_w_full
+                        ]
+                    ]
+                    [ renderNestedGrid model ]
+                ]
+            ]
         ]
     }
 
 
-startButtom : Model -> Html.Html Msg
-startButtom model =
+renderGridRow : List (Html.Html Msg) -> Html.Html Msg
+renderGridRow =
+    Html.div
+        [ Attr.css
+            [ Tw.max_w_lg
+            , Tw.left_16
+            , Tw.my_2
+            , Tw.p_3
+            , Tw.flex
+            , Tw.flex_row
+            , Tw.gap_4
+            , Tw.justify_start
+            , Tw.overflow_x_auto
+            , Tw.border
+            , Tw.border_color Tw.neutral_700
+            , Tw.rounded_lg
+            , Tw.shadow_lg
+            , Tw.shadow_color Tw.neutral_900
+            , Css.fontSize (Css.px 10)
+            , Tw.h_20
+            ]
+        ]
+
+
+startButton : Model -> Html.Html Msg
+startButton model =
     let
         disabled =
-            case model of
+            case model.state of
                 Idle ->
                     False
 
@@ -214,49 +377,11 @@ startButtom model =
 
                 _ ->
                     True
-
-        hoverStyles =
-            if not disabled then
-                [ Tw.scale_110
-                , Tw.duration_300
-                , Tw.neg_translate_y_1
-                , Tw.bg_color Tw.indigo_400
-                ]
-
-            else
-                []
-
-        color =
-            if disabled then
-                Tw.gray_400
-
-            else
-                Tw.sky_400
     in
-    Html.button
-        [ Attr.css
-            [ Tw.rounded_xl
-            , Tw.bg_color color
-            , Tw.px_8
-            , Tw.py_2
-            , Tw.border_none
-            , Tw.cursor_pointer
-            , Tw.shadow_lg
-            , Tw.transition
-            , Tw.ease_in_out
-            , Tw.delay_150
-            , Tw.transform
-            , Tw.mb_5
-            , Tw.text_sm
-            , Css.hover hoverStyles
-            ]
-        , Html.Styled.Events.onClick StartSearchingMsg
-        , Attr.disabled disabled
-        ]
-        [ Html.text "Start" ]
+    primaryButton disabled StartSearchingMsg
 
 
-renderNestedGrid : Model -> Html.Html msg
+renderNestedGrid : Model -> Html.Html Msg
 renderNestedGrid model =
     let
         searchingModel =
@@ -264,100 +389,22 @@ renderNestedGrid model =
 
         (NestedGridModel nestedGridModel) =
             searchingModel.root
+
+        rootGridState =
+            getGridState searchingModel model nestedGridModel.current
+
+        isSelected =
+            isGridSelected model nestedGridModel.current
     in
     singleItemStyledNodeWrapper
         [ styledNode
-            [ renderGrid searchingModel model nestedGridModel.current
+            [ renderMdGrid rootGridState isSelected SelectGrid DeselectGrid nestedGridModel.current
             , renderChildren searchingModel model <| nestedGridModel.children
             ]
         ]
 
 
-liBefore : List Css.Style
-liBefore =
-    [ Tw.right_1over2 ]
-
-
-liAfter : List Css.Style
-liAfter =
-    [ Tw.left_1over2, Tw.border_l_2 ]
-
-
-liOnlyChild : List Css.Style
-liOnlyChild =
-    [ Tw.pt_0 ]
-
-
-liOnlyChildBeforeAfter : List Css.Style
-liOnlyChildBeforeAfter =
-    [ Tw.hidden ]
-
-
-liFirstChildBeforeLastChildAfter : List Css.Style
-liFirstChildBeforeLastChildAfter =
-    [ Tw.border_0, Tw.border_none ]
-
-
-liLastChildBefore : List Css.Style
-liLastChildBefore =
-    [ Tw.rounded_tr_lg, Tw.border_r_2 ]
-
-
-liFirstChildAfter : List Css.Style
-liFirstChildAfter =
-    [ Tw.rounded_tl_lg ]
-
-
-liBeforeAfterStyles : List Css.Style
-liBeforeAfterStyles =
-    [ Css.property "content" "''"
-    , Tw.absolute
-    , Tw.top_0
-    , Tw.w_1over2
-    , Tw.h_9
-    , Tw.border_t_2
-    , Tw.border_color Tw.sky_400
-    ]
-
-
-ulOlBeforeStyles : List Css.Style
-ulOlBeforeStyles =
-    [ Css.property "content" "''"
-    , Tw.absolute
-    , Tw.top_0
-    , Tw.left_1over2
-    , Tw.border_l_2
-    , Tw.h_5
-    , Tw.transition
-    , Tw.ease_in_out
-    , Tw.border_color Tw.sky_400
-    ]
-
-
-ulOlFirstChild : List Css.Style
-ulOlFirstChild =
-    [ Tw.pt_0
-    ]
-
-
-ulOlBeforeFirstChild : List Css.Style
-ulOlBeforeFirstChild =
-    [ Tw.hidden ]
-
-
-ulOlStyles : List Css.Style
-ulOlStyles =
-    [ Tw.flex
-    , Tw.items_start
-    , Tw.flex_nowrap
-    , Tw.list_none
-    , Tw.relative
-    , Tw.pt_5
-    , Tw.pl_0
-    ]
-
-
-renderChildren : SearchingModel -> Model -> List NestedGrid -> Html.Html msg
+renderChildren : SearchingModel -> Model -> List NestedGrid -> Html.Html Msg
 renderChildren searchingMmodel model children =
     let
         lstEl =
@@ -365,12 +412,7 @@ renderChildren searchingMmodel model children =
                 singleItemStyledNodeWrapper
 
             else
-                Html.ul
-                    [ ulOlStyles
-                        |> List.append [ Css.before ulOlBeforeStyles ]
-                        |> List.append [ Css.firstChild ulOlFirstChild ]
-                        |> Attr.css
-                    ]
+                styledLstOfChildren
     in
     if children == [] then
         Html.div [] []
@@ -381,121 +423,26 @@ renderChildren searchingMmodel model children =
             |> lstEl
 
 
-singleItemStyledNodeWrapper : List (Html.Html msg) -> Html.Html msg
-singleItemStyledNodeWrapper =
-    Html.ol
-        [ ulOlStyles
-            |> List.append [ Css.before ulOlBeforeStyles ]
-            |> List.append [ Css.firstChild ulOlFirstChild ]
-            |> List.append [ Css.before [ Css.firstChild ulOlBeforeFirstChild ] ]
-            |> Attr.css
-        ]
-
-
-styledNode : List (Html.Html msg) -> Html.Html msg
-styledNode lst =
-    Html.li
-        [ [ Css.after liAfter ]
-            |> List.append [ Css.before liBefore ]
-            |> List.append [ Css.onlyChild liOnlyChild ]
-            |> List.append
-                [ Css.onlyChild
-                    [ Css.before liOnlyChildBeforeAfter
-                    , Css.after liOnlyChildBeforeAfter
-                    ]
-                ]
-            |> List.append
-                [ Css.firstChild [ Css.before liFirstChildBeforeLastChildAfter ]
-                , Css.lastChild [ Css.after liFirstChildBeforeLastChildAfter ]
-                ]
-            |> List.append [ Css.before liBeforeAfterStyles, Css.after liBeforeAfterStyles ]
-            |> List.append [ Css.lastChild [ Css.before liLastChildBefore ] ]
-            |> List.append [ Css.firstChild [ Css.after liFirstChildAfter ] ]
-            |> List.append
-                [ Tw.flex
-                , Tw.items_center
-                , Tw.flex_col
-                , Tw.basis_full
-                , Tw.relative
-                , Tw.pt_10
-                , Tw.pl_5
-                , Tw.pr_5
-                ]
-            |> Attr.css
-        ]
-        lst
-
-
-nodeWithChildren : SearchingModel -> Model -> NestedGrid -> Html.Html msg
+nodeWithChildren : SearchingModel -> Model -> NestedGrid -> Html.Html Msg
 nodeWithChildren searchingModel model (NestedGridModel nestedGrid) =
+    let
+        childGridState =
+            getGridState searchingModel model nestedGrid.current
+
+        isSelected =
+            isGridSelected model nestedGrid.current
+    in
     styledNode
-        [ renderGrid searchingModel model nestedGrid.current
+        [ renderMdGrid childGridState isSelected SelectGrid DeselectGrid nestedGrid.current
         , renderChildren searchingModel model nestedGrid.children
         ]
-
-
-renderStyledGrid : Tw.Color -> List (Html.Html msg) -> Html.Html msg
-renderStyledGrid color lstLines =
-    Html.div [ Attr.css [ Tw.transition, Tw.ease_in_out, Tw.text_color color ] ]
-        [ Html.div [ Attr.css [ Tw.flex, Tw.flex_col ] ]
-            lstLines
-        ]
-
-
-renderGrid : SearchingModel -> Model -> Grid -> Html.Html msg
-renderGrid searchingModel model grid =
-    let
-        gridColor =
-            case getGridState searchingModel model grid of
-                Success ->
-                    Tw.green_400
-
-                Loading ->
-                    Tw.sky_400
-
-                LoadingX ->
-                    Tw.indigo_400
-
-                Disabled ->
-                    Tw.gray_400
-
-                Start ->
-                    Tw.sky_200
-    in
-    grid
-        |> List.map (renderLine gridColor)
-        |> renderStyledGrid gridColor
-
-
-renderLine : Tw.Color -> Line -> Html.Html msg
-renderLine slotColor line =
-    line
-        |> List.map (renderSlot slotColor)
-        |> Html.div [ Attr.css [ Tw.flex, Tw.flex_row ] ]
-
-
-renderSlot : Tw.Color -> Slot -> Html.Html msg
-renderSlot slotColor slot =
-    Html.div
-        [ Attr.css
-            [ Tw.py_2
-            , Tw.px_4
-            , Tw.border_solid
-            , Tw.border
-            , Tw.border_color slotColor
-            ]
-        ]
-        (slot.value
-            |> Maybe.map (\z -> [ Html.span [] [ Html.text <| String.fromInt z ] ])
-            |> Maybe.withDefault [ Html.span [ Attr.css [ Tw.invisible ] ] [ Html.text <| String.fromInt 0 ] ]
-        )
 
 
 getGridState : SearchingModel -> Model -> Grid -> GridState
 getGridState searchingModel model grid =
     let
         goalFound =
-            case model of
+            case model.state of
                 GoalFound _ ->
                     True
 
@@ -503,75 +450,36 @@ getGridState searchingModel model grid =
                     False
 
         isIdle =
-            case model of
+            case model.state of
                 Idle ->
                     True
 
                 _ ->
                     False
     in
-    if grid == goal && goalFound then
+    if grid.lines == goal.lines && goalFound then
         Success
 
-    else if (grid |> List.member) <| searchingModel.closed then
+    else if (grid.lines |> List.member) <| (searchingModel.closed |> List.map .lines) then
         Disabled
 
-    else if grid == searchingModel.x && not isIdle then
+    else if grid.lines == searchingModel.x.lines && not isIdle then
         LoadingX
 
-    else if ((grid |> List.member) <| searchingModel.open) && not goalFound then
+    else if (grid.lines |> List.member) <| (searchingModel.open |> List.map .lines) then
         Loading
 
     else
         Start
 
 
-findGoal : Grid -> List Grid -> List Grid -> Cmd Msg
-findGoal x open closed =
-    if x == goal then
-        GoalFoundMsg { goalValue = x, closed = open ++ closed } |> delayMessage
-
-    else
-        x |> generateChildrenAndSearch closed open
+delayMessage200ms : Msg -> Cmd Msg
+delayMessage200ms msg =
+    Process.sleep 300
+        |> Task.perform (\_ -> msg)
 
 
-generateChildrenAndSearch : List Grid -> List Grid -> Grid -> Cmd Msg
-generateChildrenAndSearch closed open x =
-    case generateChildrenOf x of
-        Ok childrenOfX ->
-            let
-                nonClosedChildrenOfX =
-                    childrenOfX
-                        |> notIn closed
-
-                newOpen =
-                    List.append
-                        open
-                        nonClosedChildrenOfX
-
-                newClosed =
-                    x :: closed
-            in
-            KeepSearchingMsg { children = childrenOfX, open = newOpen, closed = newClosed }
-                |> delayMessage
-
-        Err failures ->
-            FailureGeneratingChildren failures
-                |> FailureMsg
-                |> delayMessage
-
-
-findX : List Grid -> Cmd Msg
-findX open =
-    case open of
-        [] ->
-            FailureMsg NoMoreElementsInList |> delayMessage
-
-        x :: xs ->
-            { x = x, open = xs } |> XFoundMsg |> delayMessage
-
-
-delayMessage : Msg -> Cmd Msg
-delayMessage msg =
-    Process.sleep 200
+delayMessage2s : Msg -> Cmd Msg
+delayMessage2s msg =
+    Process.sleep 2000
         |> Task.perform (\_ -> msg)
