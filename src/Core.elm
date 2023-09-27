@@ -46,8 +46,8 @@ calculateHeuristic rootGrid grid distanceFromRoot =
     countSlotsOutOfPlace + distanceFromRoot
 
 
-findGoal : Grid -> Grid -> List Grid -> List Grid -> SearchMode -> NestedGrid -> FindGoalResult
-findGoal x goal open closed searchMode root =
+findGoalIn : Grid -> Grid -> List Grid -> List Grid -> SearchMode -> NestedGrid -> FindGoalResult
+findGoalIn x goal open closed searchMode root =
     if x.lines == goal.lines then
         GoalFoundRs
 
@@ -56,8 +56,7 @@ findGoal x goal open closed searchMode root =
             Ok childrenOfX ->
                 let
                     distanceFromRoot =
-                        findNested x root
-                            |> (\(NestedGridModel z) -> z.level + 1)
+                        x |> calculateDistanceFromRoot root
 
                     nonClosedChildrenOfX =
                         childrenOfX
@@ -67,14 +66,7 @@ findGoal x goal open closed searchMode root =
                         case searchMode of
                             Heuristic ->
                                 childrenOfX
-                                    |> List.map
-                                        (\g ->
-                                            if (g |> notMember closed) && (g |> notMember open) then
-                                                gridWithHeuristic goal distanceFromRoot g
-
-                                            else
-                                                g
-                                        )
+                                    |> List.map (getGridWithHeuristicOrId closed open goal distanceFromRoot)
 
                             _ ->
                                 childrenOfX
@@ -90,8 +82,8 @@ findGoal x goal open closed searchMode root =
                             Heuristic ->
                                 open
                                     ++ newChildren
-                                    |> List.filter (\z -> (z.heuristic |> Maybe.withDefault 0) > 0)
-                                    |> List.sortBy (\z -> z.heuristic |> Maybe.withDefault 0)
+                                    |> filterWithHeuristic
+                                    |> sortByHeuristic
 
                     newClosed =
                         x :: closed
@@ -100,6 +92,31 @@ findGoal x goal open closed searchMode root =
 
             Err failures ->
                 FailRs failures
+
+
+sortByHeuristic : List { lines : List Utils.Line, heuristic : Maybe Int } -> List { lines : List Utils.Line, heuristic : Maybe Int }
+sortByHeuristic =
+    List.sortBy (\z -> z.heuristic |> Maybe.withDefault 0)
+
+
+filterWithHeuristic : List { lines : List Utils.Line, heuristic : Maybe Int } -> List { lines : List Utils.Line, heuristic : Maybe Int }
+filterWithHeuristic =
+    List.filter (\z -> (z.heuristic |> Maybe.withDefault 0) > 0)
+
+
+getGridWithHeuristicOrId : List Grid -> List Grid -> Grid -> Int -> Grid -> Grid
+getGridWithHeuristicOrId closed open goal distanceFromRoot g =
+    if (g |> notMember closed) && (g |> notMember open) then
+        gridWithHeuristic goal distanceFromRoot g
+
+    else
+        g
+
+
+calculateDistanceFromRoot : NestedGrid -> Grid -> Int
+calculateDistanceFromRoot root x =
+    findNested x root
+        |> (\(NestedGridModel z) -> z.level + 1)
 
 
 gridWithHeuristic : Grid -> Int -> Grid -> Grid

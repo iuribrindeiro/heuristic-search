@@ -4,7 +4,6 @@ module.exports = {
       scale: {
         '30': '0.3',
       },
-
       animation: {
         finiteSmPing: 'smallPing 1s cubic-bezier(0,0,.2,1) 2',
         infiniteSmPing: 'smallPing 1s cubic-bezier(0,0,.2,1) infinite',

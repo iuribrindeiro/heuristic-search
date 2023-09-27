@@ -40,7 +40,7 @@ primaryButton disabled onClick =
     in
     Html.button
         [ Attr.css
-            [ Tw.rounded_xl
+            [ Tw.rounded
             , Tw.bg_color color
             , Tw.px_8
             , Tw.py_2

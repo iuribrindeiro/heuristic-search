@@ -4,7 +4,7 @@ import Components.Grid exposing (GridState(..), renderMdGrid, renderSmallGrid, s
 import Components.Labels exposing (labels)
 import Components.PrimaryButton exposing (primaryButton)
 import Components.Radio exposing (radioInput)
-import Core exposing (FindGoalResult(..), FindXResult(..), SearchMode(..), findGoal, findX)
+import Core exposing (FindGoalResult(..), FindXResult(..), SearchMode(..), findGoalIn, findX)
 import Css
 import Html.Styled as Html
 import Html.Styled.Attributes as Attr
@@ -23,8 +23,8 @@ import View exposing (View)
 goal : Grid
 goal =
     [ [ 1, 2, 3 ]
-    , [ 5, 8, 6 ]
-    , [ 4, 7, 0 ]
+    , [ 4, 5, 6 ]
+    , [ 7, 8, 0 ]
     ]
         |> toGrid
 
@@ -32,8 +32,8 @@ goal =
 start : Grid
 start =
     [ [ 1, 2, 3 ]
-    , [ 4, 5, 6 ]
-    , [ 0, 8, 7 ]
+    , [ 0, 5, 6 ]
+    , [ 4, 7, 8 ]
     ]
         |> toGrid
 
@@ -47,22 +47,19 @@ type FailureMsgType
     | FailureGeneratingChildren GenerateChildrenFailures
 
 
-type alias FailureModel =
-    { failure : FailureMsgType, searchingModel : SearchingModel }
-
-
 type alias Model =
     { searchMode : SearchMode
     , selectedGrid : Maybe Grid
+    , searchingModel : SearchingModel
     , state : State
     }
 
 
 type State
     = Idle
-    | Searching SearchingModel
-    | GoalFound SearchingModel
-    | Failure FailureModel
+    | Searching
+    | GoalFound
+    | Failure FailureMsgType
 
 
 type Msg
@@ -86,30 +83,25 @@ subscriptions =
     \_ -> Sub.none
 
 
+firstSearchingModel : SearchingModel
+firstSearchingModel =
+    { x = start, root = firstNestedGrid, open = [ start ], closed = [] }
+
+
 init : ( Model, Cmd Msg )
 init =
-    ( { searchMode = BreadthFirst, selectedGrid = Nothing, state = Idle }, Cmd.none )
+    ( { searchMode = BreadthFirst
+      , selectedGrid = Nothing
+      , state = Idle
+      , searchingModel = firstSearchingModel
+      }
+    , Cmd.none
+    )
 
 
 firstNestedGrid : NestedGrid
 firstNestedGrid =
     NestedGridModel { current = start, parent = Nothing, children = [], level = 0 }
-
-
-getCurrentSearchingModel : Model -> SearchingModel
-getCurrentSearchingModel model =
-    case model.state of
-        Idle ->
-            { x = start, root = firstNestedGrid, open = [ start ], closed = [] }
-
-        Searching searchingModel ->
-            searchingModel
-
-        GoalFound searchingModel ->
-            searchingModel
-
-        Failure { searchingModel } ->
-            searchingModel
 
 
 findXWithMsg : List Grid -> Cmd Msg
@@ -124,9 +116,20 @@ findXWithMsg open =
                 |> delayMessage200ms
 
 
-findGoalWithMsg : Grid -> List Grid -> List Grid -> SearchMode -> NestedGrid -> Cmd Msg
-findGoalWithMsg x open closed searchMode root =
-    case findGoal x goal open closed searchMode root of
+findGoalWithMsg : Grid -> List Grid -> Model -> Cmd Msg
+findGoalWithMsg x open model =
+    let
+        goalResult =
+            findGoalIn x
+                goal
+                open
+                model.searchingModel.closed
+                model.searchMode
+                model.searchingModel.root
+    in
+    case
+        goalResult
+    of
         FailRs generatingChildFail ->
             FailureGeneratingChildren generatingChildFail
                 |> FailureMsg
@@ -145,13 +148,19 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
         currentSearchingModel =
-            getCurrentSearchingModel model
+            model.searchingModel
 
         handleStartSearchingMsg =
-            ( { model | state = Searching currentSearchingModel }, findXWithMsg currentSearchingModel.open )
+            ( { model | state = Searching }, findXWithMsg currentSearchingModel.open )
 
         handleUpdateSearchMsg newSearchMode =
-            ( { model | searchMode = newSearchMode, state = Idle }, Cmd.none )
+            ( { model
+                | searchMode = newSearchMode
+                , state = Idle
+                , searchingModel = firstSearchingModel
+              }
+            , Cmd.none
+            )
 
         handleSelectGrid grid =
             ( { model | selectedGrid = Just grid }, Cmd.none )
@@ -183,28 +192,45 @@ update msg model =
                     handleStartSearchingMsg
 
                 XFoundMsg { x, open } ->
-                    ( { model | state = Searching { currentSearchingModel | x = x, open = open } }
-                    , findGoalWithMsg x open currentSearchingModel.closed model.searchMode currentSearchingModel.root
+                    ( { model
+                        | state = Searching
+                        , searchingModel =
+                            { currentSearchingModel
+                                | x = x
+                                , open = open
+                            }
+                      }
+                    , findGoalWithMsg x open model
                     )
 
                 KeepSearchingMsg { children, open, closed } ->
                     ( { model
                         | state =
                             Searching
-                                { currentSearchingModel
-                                    | open = open
-                                    , closed = closed
-                                    , root = addChildrenToTarget currentSearchingModel.x children currentSearchingModel.root
-                                }
+                        , searchingModel =
+                            { currentSearchingModel
+                                | open = open
+                                , closed = closed
+                                , root =
+                                    addChildrenToTargetInRoot
+                                        currentSearchingModel.x
+                                        children
+                                        currentSearchingModel.root
+                            }
                       }
                     , findXWithMsg open
                     )
 
                 GoalFoundMsg ->
-                    ( { model | state = GoalFound { currentSearchingModel | open = List.filter (\z -> z /= currentSearchingModel.x) currentSearchingModel.open } }, Cmd.none )
+                    ( { model | state = GoalFound }, Cmd.none )
 
                 FailureMsg failure ->
-                    ( { model | state = Failure { failure = failure, searchingModel = currentSearchingModel } }, Cmd.none )
+                    ( { model
+                        | state = Failure failure
+                        , searchingModel = currentSearchingModel
+                      }
+                    , Cmd.none
+                    )
 
                 UpdateSearchMode newSearchMode ->
                     handleUpdateSearchMsg newSearchMode
@@ -216,16 +242,22 @@ update msg model =
                     handleDeselectGrid
 
 
-addChildrenToTarget : Grid -> List Grid -> NestedGrid -> NestedGrid
-addChildrenToTarget x children (NestedGridModel root) =
+addChildrenToTargetInRoot : Grid -> List Grid -> NestedGrid -> NestedGrid
+addChildrenToTargetInRoot x children (NestedGridModel root) =
     if x.lines == root.current.lines then
-        NestedGridModel root |> addChildren children
+        NestedGridModel root
+            |> addChildren children
 
     else if root.children == [] then
         NestedGridModel root
 
     else
-        NestedGridModel { root | children = root.children |> List.map (addChildrenToTarget x children) }
+        NestedGridModel
+            { root
+                | children =
+                    root.children
+                        |> List.map (addChildrenToTargetInRoot x children)
+            }
 
 
 addChildren : List Grid -> NestedGrid -> NestedGrid
@@ -234,15 +266,17 @@ addChildren children (NestedGridModel current) =
         { current
             | children =
                 children
-                    |> List.map
-                        (\x ->
-                            NestedGridModel
-                                { current = x
-                                , children = []
-                                , parent = Just (NestedGridModel current)
-                                , level = current.level + 1
-                                }
-                        )
+                    |> List.map (createChildNestedGrid <| NestedGridModel current)
+        }
+
+
+createChildNestedGrid : NestedGrid -> Grid -> NestedGrid
+createChildNestedGrid (NestedGridModel current) x =
+    NestedGridModel
+        { current = x
+        , children = []
+        , parent = Just (NestedGridModel current)
+        , level = current.level + 1
         }
 
 
@@ -269,10 +303,6 @@ isGridSelected model grid =
 
 view : Model -> View Msg
 view model =
-    let
-        searchingModel =
-            getCurrentSearchingModel model
-    in
     { title = "Homepage"
     , body =
         [ Html.div
@@ -303,9 +333,9 @@ view model =
                 , labels
                 , startButton model
                 , renderGridRow <|
-                    List.map (renderSmallGrid Disabled False SelectGrid DeselectGrid) searchingModel.closed
+                    List.map (renderSmallGrid Disabled False SelectGrid DeselectGrid) model.searchingModel.closed
                 , renderGridRow <|
-                    List.map (renderSmallGrid Loading False SelectGrid DeselectGrid) searchingModel.open
+                    List.map (renderSmallGrid Loading False SelectGrid DeselectGrid) model.searchingModel.open
                 ]
             , Html.div
                 [ Attr.css
@@ -385,7 +415,7 @@ renderNestedGrid : Model -> Html.Html Msg
 renderNestedGrid model =
     let
         searchingModel =
-            getCurrentSearchingModel model
+            model.searchingModel
 
         (NestedGridModel nestedGridModel) =
             searchingModel.root
@@ -442,20 +472,10 @@ getGridState : SearchingModel -> Model -> Grid -> GridState
 getGridState searchingModel model grid =
     let
         goalFound =
-            case model.state of
-                GoalFound _ ->
-                    True
-
-                _ ->
-                    False
+            model.state == GoalFound
 
         isIdle =
-            case model.state of
-                Idle ->
-                    True
-
-                _ ->
-                    False
+            model.state == Idle
     in
     if grid.lines == goal.lines && goalFound then
         Success

@@ -112,12 +112,12 @@ toGrid lstOfLineValues =
     let
         lines =
             List.indexedMap
-                (\lineIndex line ->
-                    line
+                (\lineIndex slotsInLine ->
+                    slotsInLine
                         |> List.indexedMap
-                            (\colIndex value ->
+                            (\slotIndex value ->
                                 { lineIndex = lineIndex
-                                , colIndex = colIndex
+                                , colIndex = slotIndex
                                 , value =
                                     if value == 0 then
                                         Nothing
