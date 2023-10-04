@@ -1,7 +1,7 @@
 module Core exposing (..)
 
 import Json.Decode exposing (Error(..))
-import Utils exposing (GenerateChildrenFailures, Grid, NestedGrid(..), Slot, findNested, generateChildrenOf, notIn, notMember)
+import Utils exposing (GenerateChildrenFailures, Grid, NestedGrid(..), Slot, findNested, generateChildrenOf, mapIf, notIn, notMember)
 
 
 type SearchMode
@@ -22,8 +22,8 @@ type FindXResult
 
 
 notGoalSlot : List Slot -> Slot -> Bool
-notGoalSlot goalSlots z =
-    (not << List.member z) goalSlots
+notGoalSlot goalSlots slot =
+    (not << List.member slot) goalSlots
 
 
 getCountSlotsOutOfPlace : List Slot -> List Slot -> Int
@@ -55,8 +55,14 @@ findGoalIn x goal open closed searchMode root =
         case generateChildrenOf x of
             Ok childrenOfX ->
                 let
+                    notMemberOfClosedOrOpen =
+                        notMember (closed ++ open)
+
                     distanceFromRoot =
                         x |> calculateDistanceFromRoot root
+
+                    toGridWithHeuristic =
+                        gridWithHeuristic goal distanceFromRoot
 
                     nonClosedChildrenOfX =
                         childrenOfX
@@ -66,7 +72,7 @@ findGoalIn x goal open closed searchMode root =
                         case searchMode of
                             Heuristic ->
                                 childrenOfX
-                                    |> List.map (getGridWithHeuristicOrId closed open goal distanceFromRoot)
+                                    |> mapIf notMemberOfClosedOrOpen toGridWithHeuristic
 
                             _ ->
                                 childrenOfX
@@ -82,7 +88,7 @@ findGoalIn x goal open closed searchMode root =
                             Heuristic ->
                                 open
                                     ++ newChildren
-                                    |> filterWithHeuristic
+                                    |> onlyWithHeuristic
                                     |> sortByHeuristic
 
                     newClosed =
@@ -99,18 +105,9 @@ sortByHeuristic =
     List.sortBy (\z -> z.heuristic |> Maybe.withDefault 0)
 
 
-filterWithHeuristic : List { lines : List Utils.Line, heuristic : Maybe Int } -> List { lines : List Utils.Line, heuristic : Maybe Int }
-filterWithHeuristic =
+onlyWithHeuristic : List { lines : List Utils.Line, heuristic : Maybe Int } -> List { lines : List Utils.Line, heuristic : Maybe Int }
+onlyWithHeuristic =
     List.filter (\z -> (z.heuristic |> Maybe.withDefault 0) > 0)
-
-
-getGridWithHeuristicOrId : List Grid -> List Grid -> Grid -> Int -> Grid -> Grid
-getGridWithHeuristicOrId closed open goal distanceFromRoot g =
-    if (g |> notMember closed) && (g |> notMember open) then
-        gridWithHeuristic goal distanceFromRoot g
-
-    else
-        g
 
 
 calculateDistanceFromRoot : NestedGrid -> Grid -> Int

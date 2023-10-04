@@ -357,3 +357,15 @@ noEmptySlotErr =
 isNone : Slot -> Bool
 isNone slot =
     Maybe.map (\_ -> False) slot.value |> Maybe.withDefault True
+
+
+mapIf : (a -> Bool) -> (a -> a) -> List a -> List a
+mapIf conditionFunc mapFunc =
+    List.map
+        (\z ->
+            if conditionFunc z then
+                mapFunc z
+
+            else
+                z
+        )
