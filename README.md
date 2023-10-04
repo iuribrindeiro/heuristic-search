@@ -1,4 +1,21 @@
-# my new project
+# heuristic-search made with elm
+
+This project demonstrates the use of the [heuristic](https://en.wikipedia.org/wiki/Heuristic_(computer_science)) to find the shortest path between two points on a grid.
+
+The example used here is an 8 puzzle game, where the goal is to move the tiles to the correct position.
+
+The heuristic used is the [Manhattan distance](https://en.wikipedia.org/wiki/Taxicab_geometry), which is the sum of the distances of the tiles to their correct positions.
+
+> f = g + h
+
+where:
+* g = the distance from the starting point to the current point
+* h = the number of tiles that are not in their correct position
+
+## Example:
+
+![Goal found](./goal-found.jpeg)
+
 > 🌳  built with [elm-spa](https://elm-spa.dev)
 
 ## dependencies
